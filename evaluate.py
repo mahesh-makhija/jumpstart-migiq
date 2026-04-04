@@ -1,11 +1,37 @@
-"""Human feedback collection via local web UI."""
+"""Human feedback collection via CLI or local web UI."""
 
+import os
 import threading
 import webbrowser
 from flask import Flask, request, Response
 
+USE_WEB = os.environ.get("AUTORESEARCH_WEB", "").lower() in ("1", "true", "yes")
 
-def collect_rating(content: str, port: int = 5050) -> dict:
+
+def collect_rating_cli(content: str) -> dict:
+    """Collect rating via terminal input."""
+    print("\n  ┌─────────────────────────────────────────┐")
+    print("  │         GENERATED CONTENT                │")
+    print("  └─────────────────────────────────────────┘\n")
+    for line in content.splitlines():
+        print(f"    {line}")
+    print()
+
+    while True:
+        try:
+            raw = input("  Rate this content (1-5): ").strip()
+            rating = int(raw)
+            if 1 <= rating <= 5:
+                break
+            print("  Please enter a number between 1 and 5.")
+        except ValueError:
+            print("  Please enter a number between 1 and 5.")
+
+    comment = input("  Comment (optional, press Enter to skip): ").strip()
+    return {"rating": rating, "comment": comment}
+
+
+def collect_rating_web(content: str, port: int = 5050) -> dict:
     """Open a browser with the content and star rating UI. Block until rated."""
     result = {}
     ready = threading.Event()
@@ -94,7 +120,7 @@ function submit() {{
         return Response("ok", status=200)
 
     server = threading.Thread(
-        target=lambda: app.run(port=port, use_reloader=False),
+        target=lambda: app.run(host="0.0.0.0", port=port, use_reloader=False),
         daemon=True,
     )
     server.start()
@@ -105,3 +131,10 @@ function submit() {{
 
     ready.wait()
     return result
+
+
+def collect_rating(content: str, port: int = 5050) -> dict:
+    """Collect rating via CLI (default) or web UI (set AUTORESEARCH_WEB=1)."""
+    if USE_WEB:
+        return collect_rating_web(content, port)
+    return collect_rating_cli(content)
