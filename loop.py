@@ -1,14 +1,13 @@
 """Autoresearch loop: optimize → generate → rate → log → git commit → repeat."""
 
 import csv
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import anthropic
-
-from engine import load_strategy, generate_content
+from engine import load_strategy, generate_content, DEMO_MODE
 from evaluate import collect_rating
 
 HISTORY_FILE = "history.tsv"
@@ -64,6 +63,12 @@ def optimize_strategy(user_request: str):
         print("  First iteration — using seed strategy as-is.")
         return
 
+    if DEMO_MODE:
+        print("  Demo mode — skipping strategy optimization (no API key).")
+        return
+
+    import anthropic
+
     client = anthropic.Anthropic()
 
     prompt = f"""Here is the current state of the content optimization experiment.
@@ -112,6 +117,8 @@ def run_loop(user_request: str):
     """Main loop: optimize → generate → rate → log → commit."""
     print(f"\n{'='*60}")
     print(f"  AUTORESEARCH — Content Optimization Loop")
+    if DEMO_MODE:
+        print(f"  ⚠ DEMO MODE (no ANTHROPIC_API_KEY)")
     print(f"  Request: {user_request}")
     print(f"{'='*60}\n")
 

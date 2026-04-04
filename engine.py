@@ -1,9 +1,10 @@
 """Content generation engine. Parses strategy.md and calls Claude API."""
 
 import os
+import random
 from pathlib import Path
 
-import anthropic
+DEMO_MODE = not os.environ.get("ANTHROPIC_API_KEY")
 
 
 def load_strategy(path: str = "strategy.md") -> dict:
@@ -31,9 +32,23 @@ def load_strategy(path: str = "strategy.md") -> dict:
     return {k: v.strip() for k, v in sections.items()}
 
 
+DEMO_RESPONSES = [
+    "Wake up and smell the extraordinary. Life's too short for ordinary coffee.",
+    "Where every cup tells a story — and every sip writes the next chapter.",
+    "Brewed with passion. Served with soul. Your daily escape starts here.",
+    "Not just coffee. A moment of calm in a world that won't stop spinning.",
+    "Good mornings start here. Great mornings never leave.",
+]
+
+
 def generate_content(strategy: dict, user_request: str) -> str:
     """Call Claude API with the strategy's system prompt + user request."""
-    client = anthropic.Anthropic()  # uses ANTHROPIC_API_KEY env var
+    if DEMO_MODE:
+        return random.choice(DEMO_RESPONSES)
+
+    import anthropic
+
+    client = anthropic.Anthropic()
 
     system_prompt = strategy["system_prompt"]
     if strategy["examples"]:
