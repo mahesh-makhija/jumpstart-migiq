@@ -1,0 +1,184 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { Item, Status } from "@/lib/types";
+
+const STATUSES: Status[] = ["inbox", "reading", "finished"];
+
+export default function ItemPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const router = useRouter();
+  const [item, setItem] = useState<Item | null>(null);
+  const [tagInput, setTagInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const r = await fetch(`/api/items/${id}`);
+      if (!r.ok) {
+        setErr(`HTTP ${r.status}`);
+        return;
+      }
+      const d = (await r.json()) as { item: Item };
+      setItem(d.item);
+    })();
+  }, [id]);
+
+  async function patch(next: Partial<Pick<Item, "status" | "tags">>) {
+    if (!item) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e.error || `HTTP ${r.status}`);
+      }
+      const d = (await r.json()) as { item: Item };
+      setItem(d.item);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function archive() {
+    if (!confirm("Archive this item?")) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      router.push("/");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  }
+
+  function addTag() {
+    if (!item) return;
+    const v = tagInput.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!v || item.tags.includes(v)) return;
+    patch({ tags: [...item.tags, v] });
+    setTagInput("");
+  }
+
+  function removeTag(t: string) {
+    if (!item) return;
+    patch({ tags: item.tags.filter((x) => x !== t) });
+  }
+
+  if (err) return <p className="text-sm text-red-600">{err}</p>;
+  if (!item) return <p className="text-sm text-muted">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-xs uppercase tracking-wide text-muted">
+          {item.source_type}
+          {item.author ? ` · ${item.author}` : ""}
+        </div>
+        <h1 className="text-xl font-semibold mt-1">{item.title}</h1>
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm text-accent break-all underline"
+        >
+          {item.url}
+        </a>
+      </div>
+
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noreferrer"
+        className="block w-full text-center bg-ink text-paper rounded-lg py-3"
+      >
+        Open original →
+      </a>
+
+      <div>
+        <div className="text-sm font-medium mb-2">Status</div>
+        <div className="flex gap-1">
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              disabled={busy}
+              onClick={() => patch({ status: s })}
+              className={`flex-1 rounded-lg py-2 text-sm border ${
+                item.status === s
+                  ? "bg-ink text-paper border-ink"
+                  : "bg-white text-ink border-black/10"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="text-sm font-medium mb-2">Tags</div>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {item.tags.map((t) => (
+            <button
+              key={t}
+              onClick={() => removeTag(t)}
+              disabled={busy}
+              className="rounded-full px-3 py-1 text-sm bg-white border border-black/15"
+              title="Click to remove"
+            >
+              {t} ✕
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addTag();
+              }
+            }}
+            placeholder="Add tag"
+            className="flex-1 border border-black/10 rounded-lg px-3 py-2 bg-white"
+          />
+          <button
+            type="button"
+            onClick={addTag}
+            disabled={busy || !tagInput}
+            className="px-3 rounded-lg border border-black/10 disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted">Saved excerpt</summary>
+        <pre className="whitespace-pre-wrap mt-2 text-sm text-ink/80 bg-white border border-black/10 rounded p-3 max-h-80 overflow-auto">
+          {item.body || "(no body saved — link only)"}
+        </pre>
+      </details>
+
+      <button
+        onClick={archive}
+        disabled={busy}
+        className="w-full text-sm text-red-600 border border-red-200 rounded-lg py-2 disabled:opacity-50"
+      >
+        Archive
+      </button>
+    </div>
+  );
+}
