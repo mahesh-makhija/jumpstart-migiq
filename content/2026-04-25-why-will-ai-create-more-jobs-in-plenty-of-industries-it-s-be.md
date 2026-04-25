@@ -7,7 +7,7 @@ title: >-
 source_type: tweet
 author: Aaron Levie
 date_added: '2026-04-25'
-status: inbox
+status: reading
 tags:
   - ai-job-creation
   - ai-accelerated-output
