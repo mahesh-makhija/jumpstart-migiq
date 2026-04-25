@@ -6,6 +6,12 @@ import type { Item, Status } from "@/lib/types";
 
 const STATUSES: Status[] = ["inbox", "reading", "finished"];
 
+type OfflineState = "checking" | "online" | "saving" | "saved" | "failed";
+
+function proxyUrl(originalUrl: string): string {
+  return `/api/proxy?url=${encodeURIComponent(originalUrl)}`;
+}
+
 export default function ItemPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -13,6 +19,7 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
   const [tagInput, setTagInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [offline, setOffline] = useState<OfflineState>("checking");
 
   useEffect(() => {
     (async () => {
@@ -25,6 +32,21 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
       setItem(d.item);
     })();
   }, [id]);
+
+  // Once we know the item, check whether its proxy URL is already in the
+  // service worker offline cache.
+  useEffect(() => {
+    if (!item) return;
+    if (typeof caches === "undefined") {
+      setOffline("online");
+      return;
+    }
+    (async () => {
+      const cache = await caches.open("migiq-offline-v1");
+      const hit = await cache.match(proxyUrl(item.url));
+      setOffline(hit ? "saved" : "online");
+    })();
+  }, [item]);
 
   async function patch(next: Partial<Pick<Item, "status" | "tags">>) {
     if (!item) return;
@@ -76,8 +98,37 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
     patch({ tags: item.tags.filter((x) => x !== t) });
   }
 
+  async function saveOffline() {
+    if (!item) return;
+    setOffline("saving");
+    const target = proxyUrl(item.url);
+    try {
+      const res = await fetch(target, { credentials: "include" });
+      if (!res.ok) {
+        setOffline("failed");
+        return;
+      }
+      // Reading the body forces the SW to cache it.
+      await res.blob();
+      const cache = await caches.open("migiq-offline-v1");
+      const hit = await cache.match(target);
+      setOffline(hit ? "saved" : "online");
+    } catch {
+      setOffline("failed");
+    }
+  }
+
+  async function removeOffline() {
+    if (!item) return;
+    const cache = await caches.open("migiq-offline-v1");
+    await cache.delete(proxyUrl(item.url));
+    setOffline("online");
+  }
+
   if (err) return <p className="text-sm text-red-600">{err}</p>;
   if (!item) return <p className="text-sm text-muted">Loading…</p>;
+
+  const openHref = offline === "saved" ? proxyUrl(item.url) : item.url;
 
   return (
     <div className="space-y-4">
@@ -98,13 +149,61 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       <a
-        href={item.url}
+        href={openHref}
         target="_blank"
         rel="noreferrer"
         className="block w-full text-center bg-ink text-paper rounded-lg py-3"
       >
         Open original →
       </a>
+
+      <div>
+        <div className="text-sm font-medium mb-2">Offline</div>
+        {offline === "checking" && <p className="text-sm text-muted">Checking…</p>}
+        {offline === "online" && (
+          <button
+            onClick={saveOffline}
+            className="w-full rounded-lg py-2 text-sm border border-black/10 bg-white"
+          >
+            Save for offline reading
+          </button>
+        )}
+        {offline === "saving" && (
+          <button
+            disabled
+            className="w-full rounded-lg py-2 text-sm border border-black/10 bg-white opacity-60"
+          >
+            Saving…
+          </button>
+        )}
+        {offline === "saved" && (
+          <div className="flex gap-2">
+            <div className="flex-1 rounded-lg py-2 text-sm text-center bg-emerald-50 border border-emerald-200 text-emerald-800">
+              Available offline ✓
+            </div>
+            <button
+              onClick={removeOffline}
+              className="rounded-lg px-3 text-sm border border-black/10 bg-white"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+        {offline === "failed" && (
+          <div className="space-y-1">
+            <button
+              onClick={saveOffline}
+              className="w-full rounded-lg py-2 text-sm border border-amber-300 bg-amber-50 text-amber-900"
+            >
+              Retry save
+            </button>
+            <p className="text-xs text-muted">
+              Some sites block cross-origin downloads (paywalls, login walls). The link
+              still opens online.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div>
         <div className="text-sm font-medium mb-2">Status</div>
