@@ -96,8 +96,16 @@ async function deleteFile(opts: { path: string; sha: string; message: string }):
   if (!r.ok) throw new Error(`GitHub delete ${opts.path}: ${r.status}`);
 }
 
+function clean<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 function serialize(fm: ItemFrontmatter, body: string): string {
-  return matter.stringify(body, fm as unknown as Record<string, unknown>);
+  return matter.stringify(body, clean(fm as unknown as Record<string, unknown>));
 }
 
 function parse(path: string, raw: string, sha: string): Item {
@@ -177,12 +185,19 @@ export async function archiveItem(id: string): Promise<void> {
   const existing = await getItem(id);
   if (!existing) throw new Error(`Item not found: ${id}`);
   const archivedPath = `${ARCHIVE_DIR}/${id}.md`;
-  const content = matter.stringify(existing.body, {
-    ...existing,
-    body: undefined,
-    sha: undefined,
-    path: undefined,
-  } as unknown as Record<string, unknown>);
+  const fm: ItemFrontmatter = {
+    id: existing.id,
+    url: existing.url,
+    title: existing.title,
+    source_type: existing.source_type,
+    author: existing.author,
+    date_published: existing.date_published,
+    date_added: existing.date_added,
+    status: existing.status,
+    tags: existing.tags,
+    local_content: existing.local_content,
+  };
+  const content = serialize(fm, existing.body);
   await putFile({
     path: archivedPath,
     content,
