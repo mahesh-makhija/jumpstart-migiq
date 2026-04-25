@@ -14,6 +14,92 @@ function classify(url: string): SourceType {
   return "article";
 }
 
+const SHORTLINK_HOSTS = new Set([
+  "share.google",
+  "g.co",
+  "t.co",
+  "lnkd.in",
+  "bit.ly",
+  "tinyurl.com",
+  "buff.ly",
+  "ow.ly",
+  "goo.gl",
+]);
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
+function isShortlink(url: string): boolean {
+  return SHORTLINK_HOSTS.has(hostnameOf(url));
+}
+
+function absolutize(href: string, base: string): string {
+  try {
+    return new URL(href, base).toString();
+  } catch {
+    return href;
+  }
+}
+
+function findDestinationInHtml(html: string, baseUrl: string): string | null {
+  const meta = html.match(
+    /<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*url=([^"'>\s]+)/i,
+  );
+  if (meta && meta[1]) {
+    const u = absolutize(meta[1], baseUrl);
+    if (!isShortlink(u)) return u;
+  }
+
+  const canonical = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  if (canonical && canonical[1]) {
+    const u = absolutize(canonical[1], baseUrl);
+    if (!isShortlink(u) && hostnameOf(u) !== hostnameOf(baseUrl)) return u;
+  }
+
+  const og = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
+  if (og && og[1]) {
+    const u = absolutize(og[1], baseUrl);
+    if (!isShortlink(u) && hostnameOf(u) !== hostnameOf(baseUrl)) return u;
+  }
+
+  const baseHost = hostnameOf(baseUrl);
+  const hrefMatches = html.matchAll(/href=["'](https?:\/\/[^"'\s]+)["']/gi);
+  for (const m of hrefMatches) {
+    const u = m[1];
+    const h = hostnameOf(u);
+    if (!h || h === baseHost || isShortlink(u)) continue;
+    if (h.endsWith(".google.com") || h === "google.com" || h === "support.google.com") continue;
+    return u;
+  }
+
+  return null;
+}
+
+async function unwrapShortlink(url: string): Promise<string | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      signal: ctrl.signal,
+      redirect: "follow",
+    });
+    if (!r.ok) return null;
+    if (!isShortlink(r.url)) return r.url;
+    const html = await r.text();
+    return findDestinationInHtml(html, r.url);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchText(url: string, timeoutMs = 12000): Promise<string | null> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -85,7 +171,8 @@ async function extractArticle(url: string, source_type: SourceType): Promise<Ext
   const dom = new JSDOM(html, { url: fetchUrl, virtualConsole });
   const meta = extractOG(dom);
 
-  let title = meta["og:title"] || meta["twitter:title"] || meta["title"] || url;
+  let title =
+    meta["og:title"] || meta["twitter:title"] || meta["title"] || hostnameOf(fetchUrl) || url;
   let author = meta["author"] || meta["article:author"] || undefined;
   const datePublished =
     meta["article:published_time"] ||
@@ -172,7 +259,7 @@ async function extractTweet(url: string): Promise<ExtractResult> {
 
 function linkOnly(url: string, source_type: SourceType, reason: string): ExtractResult {
   return {
-    title: url,
+    title: hostnameOf(url) || url,
     source_type,
     body: `(${reason})`,
     local_content: false,
@@ -180,8 +267,16 @@ function linkOnly(url: string, source_type: SourceType, reason: string): Extract
 }
 
 export async function extract(url: string): Promise<ExtractResult> {
-  const source_type = classify(url);
-  if (source_type === "youtube") return extractYouTube(url);
-  if (source_type === "tweet") return extractTweet(url);
-  return extractArticle(url, source_type);
+  let resolved = url;
+  if (isShortlink(url)) {
+    const unwrapped = await unwrapShortlink(url);
+    if (unwrapped && unwrapped !== url) resolved = unwrapped;
+  }
+  const source_type = classify(resolved);
+  let result: ExtractResult;
+  if (source_type === "youtube") result = await extractYouTube(resolved);
+  else if (source_type === "tweet") result = await extractTweet(resolved);
+  else result = await extractArticle(resolved, source_type);
+  if (resolved !== url) result.resolved_url = resolved;
+  return result;
 }

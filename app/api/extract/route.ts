@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       proposed_id: makeId(extracted.title),
-      url,
+      url: extracted.resolved_url ?? url,
       extracted,
       existing_tags: existing,
       suggestions: tags,
