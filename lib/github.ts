@@ -124,7 +124,11 @@ export async function listItems(): Promise<Item[]> {
       const r = await readFile(f.path);
       if (!r) return null;
       try {
-        return parse(f.path, r.content, r.sha);
+        const item = parse(f.path, r.content, r.sha);
+        // Skip files without proper frontmatter (e.g. a stray README.md
+        // dropped into content/ by hand).
+        if (!item.id || !item.title) return null;
+        return item;
       } catch {
         return null;
       }
