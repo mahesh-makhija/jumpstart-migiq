@@ -145,10 +145,19 @@ export async function getItem(id: string): Promise<Item | null> {
 }
 
 export async function createItem(fm: ItemFrontmatter, body: string): Promise<Item> {
-  const path = `${CONTENT_DIR}/${fm.id}.md`;
-  const content = serialize(fm, body);
-  await putFile({ path, content, message: `add ${fm.id}` });
-  const fresh = await getItem(fm.id);
+  // If the slug collides with an existing file, append -2, -3, ... until free.
+  let id = fm.id;
+  let path = `${CONTENT_DIR}/${id}.md`;
+  for (let n = 2; n < 50; n++) {
+    const existing = await readFile(path);
+    if (!existing) break;
+    id = `${fm.id}-${n}`;
+    path = `${CONTENT_DIR}/${id}.md`;
+  }
+  const finalFm: ItemFrontmatter = { ...fm, id };
+  const content = serialize(finalFm, body);
+  await putFile({ path, content, message: `add ${id}` });
+  const fresh = await getItem(id);
   if (!fresh) throw new Error("Created but could not re-read item");
   return fresh;
 }

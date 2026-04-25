@@ -64,8 +64,17 @@ function extractOG(dom: JSDOM): Record<string, string> {
   return meta;
 }
 
+function arxivAbsUrl(url: string): string | null {
+  // Convert arxiv.org/pdf/<id>(.pdf)? → arxiv.org/abs/<id> so Readability
+  // can pull title + abstract from the HTML page instead of choking on the PDF.
+  const m = url.match(/^https?:\/\/arxiv\.org\/pdf\/([^\s?#]+?)(?:\.pdf)?(?:[?#].*)?$/i);
+  if (!m) return null;
+  return `https://arxiv.org/abs/${m[1]}`;
+}
+
 async function extractArticle(url: string, source_type: SourceType): Promise<ExtractResult> {
-  const html = await fetchText(url);
+  const fetchUrl = arxivAbsUrl(url) || url;
+  const html = await fetchText(fetchUrl);
   if (!html) return linkOnly(url, source_type, "Could not fetch page");
 
   const virtualConsole = new VirtualConsole();
@@ -73,7 +82,7 @@ async function extractArticle(url: string, source_type: SourceType): Promise<Ext
   virtualConsole.on("warn", () => {});
   virtualConsole.on("jsdomError", () => {});
 
-  const dom = new JSDOM(html, { url, virtualConsole });
+  const dom = new JSDOM(html, { url: fetchUrl, virtualConsole });
   const meta = extractOG(dom);
 
   let title = meta["og:title"] || meta["twitter:title"] || meta["title"] || url;
