@@ -29,15 +29,15 @@ Any string. You'll type it once per device, then the cookie keeps you in.
 
 ### 4. Deploy to Vercel
 - https://vercel.com → "Add New Project" → import `mahesh-makhija/jumpstart-migiq`
-- **Root Directory: `migiq`** (this matters — the Python files in the parent are unrelated)
+- **Root Directory: leave empty / `./`** (the Next.js app sits at the repo root)
 - Framework: Next.js (auto-detected)
-- Production branch: `claude/knowledge-assistant-design-Ko79m` (or merge to main first)
+- Production branch: `main`
 - Add Environment Variables:
   - `ANTHROPIC_API_KEY` = (from step 1)
   - `GITHUB_TOKEN` = (from step 2)
   - `GITHUB_OWNER` = `mahesh-makhija`
   - `GITHUB_REPO` = `jumpstart-migiq`
-  - `GITHUB_BRANCH` = `claude/knowledge-assistant-design-Ko79m`
+  - `GITHUB_BRANCH` = `main`
   - `APP_PASSWORD` = (from step 3)
 - Deploy.
 
@@ -83,7 +83,6 @@ history isn't your only backup.
 ## Local development
 
 ```bash
-cd migiq
 cp .env.example .env.local
 # fill in the 6 env vars
 npm install

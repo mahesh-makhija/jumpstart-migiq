@@ -1,4 +1,15 @@
+node_modules/
+.next/
+out/
+*.log
+.env
+.env.local
+.vercel
+next-env.d.ts
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# autoresearch (Python) artifacts
 __pycache__/
 *.pyc
-.env
-history.tsv
+autoresearch/history.tsv
