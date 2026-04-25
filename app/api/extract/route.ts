@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extract } from "@/lib/extract";
-import { suggestTags } from "@/lib/claude";
+import { suggestTags } from "@/lib/llm";
 import { allTags } from "@/lib/github";
 import { makeId } from "@/lib/slug";
 

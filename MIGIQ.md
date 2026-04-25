@@ -1,21 +1,21 @@
 # Migiq
 
 Personal knowledge tracker. Paste a URL on your phone — it extracts the content,
-suggests tags via Claude, saves a markdown file in a GitHub repo. Browse,
+suggests tags via OpenAI, saves a markdown file in a GitHub repo. Browse,
 filter, mark as Finished. That's it.
 
 ## Stack
 
 - Next.js 15 (App Router) + Tailwind, deployed on Vercel
 - GitHub repo as the database (one `.md` per item in `content/`)
-- Claude API for tag suggestions
+- OpenAI API (`gpt-4o-mini`) for tag suggestions
 - Single-user, password-gated
 
 ## One-time setup (do this on phone, ~10 min)
 
-### 1. Anthropic API key
-- https://console.anthropic.com → API Keys → Create
-- Copy. Costs ~$0.30/month at typical use.
+### 1. OpenAI API key
+- https://platform.openai.com/api-keys → Create new secret key
+- Copy. Costs roughly $0.01–$0.05/month at typical use with `gpt-4o-mini`.
 
 ### 2. GitHub Personal Access Token
 - https://github.com/settings/personal-access-tokens → Generate new token (Fine-grained)
@@ -33,7 +33,7 @@ Any string. You'll type it once per device, then the cookie keeps you in.
 - Framework: Next.js (auto-detected)
 - Production branch: `main`
 - Add Environment Variables:
-  - `ANTHROPIC_API_KEY` = (from step 1)
+  - `OPENAI_API_KEY` = (from step 1)
   - `GITHUB_TOKEN` = (from step 2)
   - `GITHUB_OWNER` = `mahesh-makhija`
   - `GITHUB_REPO` = `jumpstart-migiq`

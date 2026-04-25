@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type { TagSuggestion } from "./types";
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "gpt-4o-mini";
 const MAX_BODY_CHARS = 6000;
 
 const SYSTEM = `You are a tagging assistant for a personal knowledge library. You will be given:
@@ -22,9 +22,7 @@ Your job:
   "overlap_warnings": [
     {"new": "new-tag", "similar_existing": ["tag1"], "note": "short reason"}
   ]
-}
-
-No prose outside the JSON. No markdown fences.`;
+}`;
 
 function buildPrompt(args: {
   title: string;
@@ -46,10 +44,8 @@ ${body || "(no body extracted; tag from title alone)"}`;
 }
 
 function tryParse(s: string): TagSuggestion | null {
-  // Strip code fences if any model output sneaks them in.
-  const cleaned = s.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
   try {
-    const parsed = JSON.parse(cleaned);
+    const parsed = JSON.parse(s);
     if (
       Array.isArray(parsed.suggested_existing) &&
       Array.isArray(parsed.suggested_new) &&
@@ -69,26 +65,24 @@ export async function suggestTags(args: {
   body: string;
   existing: { tag: string; count: number }[];
 }): Promise<TagSuggestion> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY not set");
-  const client = new Anthropic({ apiKey: key });
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OPENAI_API_KEY not set");
+  const client = new OpenAI({ apiKey: key });
 
-  const msg = await client.messages.create({
+  const completion = await client.chat.completions.create({
     model: MODEL,
-    max_tokens: 512,
-    system: SYSTEM,
-    messages: [{ role: "user", content: buildPrompt(args) }],
     temperature: 0.2,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM },
+      { role: "user", content: buildPrompt(args) },
+    ],
   });
 
-  const text = msg.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { text: string }).text)
-    .join("");
-
+  const text = completion.choices[0]?.message?.content || "";
   const parsed = tryParse(text);
   if (parsed) return parsed;
 
-  // Fallback: empty suggestions rather than throwing.
   return { suggested_existing: [], suggested_new: [], overlap_warnings: [] };
 }
