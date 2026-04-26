@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Item, Status } from "@/lib/types";
+
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_MOVE_TOLERANCE = 10;
 
 const STATUSES: { key: Status | "all"; label: string }[] = [
   { key: "inbox", label: "Inbox" },
@@ -12,11 +16,27 @@ const STATUSES: { key: Status | "all"; label: string }[] = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[] | null>(null);
   const [status, setStatus] = useState<Status | "all">("inbox");
   const [tag, setTag] = useState<string>("");
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+
+  async function archive(id: string, title: string) {
+    if (!confirm(`Archive "${title}"?`)) return;
+    setArchivingId(id);
+    try {
+      const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setItems((cur) => (cur ? cur.filter((it) => it.id !== id) : cur));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchivingId(null);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -126,32 +146,13 @@ export default function Home() {
       ) : (
         <ul className="divide-y divide-black/5 bg-white border border-black/10 rounded-lg overflow-hidden">
           {filtered.map((it) => (
-            <li key={it.id}>
-              <Link href={`/item/${it.id}`} className="block px-3 py-3 hover:bg-black/[0.02]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs uppercase tracking-wide text-muted">
-                      {sourceLabel(it.source_type)}
-                      {it.author ? ` · ${it.author}` : ""}
-                    </div>
-                    <div className="font-medium truncate">{it.title}</div>
-                    {(it.tags || []).length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {it.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted whitespace-nowrap">{it.date_added}</div>
-                </div>
-              </Link>
-            </li>
+            <ItemRow
+              key={it.id}
+              item={it}
+              archiving={archivingId === it.id}
+              onOpen={() => router.push(`/item/${it.id}`)}
+              onLongPress={() => archive(it.id, it.title)}
+            />
           ))}
         </ul>
       )}
@@ -163,4 +164,112 @@ function sourceLabel(s: string): string {
   return { paper: "paper", article: "article", youtube: "youtube", tweet: "tweet", other: "link" }[
     s
   ] || "link";
+}
+
+function ItemRow({
+  item,
+  archiving,
+  onOpen,
+  onLongPress,
+}: {
+  item: Item;
+  archiving: boolean;
+  onOpen: () => void;
+  onLongPress: () => void;
+}) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+
+  function clearTimer() {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (e.button !== undefined && e.button !== 0) return;
+    longPressed.current = false;
+    startPos.current = { x: e.clientX, y: e.clientY };
+    timer.current = setTimeout(() => {
+      longPressed.current = true;
+      timer.current = null;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (!startPos.current) return;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE) clearTimer();
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    clearTimer();
+    startPos.current = null;
+    if (longPressed.current) {
+      e.preventDefault();
+      return;
+    }
+    onOpen();
+  }
+
+  function onPointerCancel() {
+    clearTimer();
+    startPos.current = null;
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    // Suppress the OS callout that fires alongside touch long-press.
+    e.preventDefault();
+  }
+
+  return (
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onContextMenu={onContextMenu}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className={`block px-3 py-3 hover:bg-black/[0.02] cursor-pointer select-none touch-pan-y ${
+          archiving ? "opacity-50" : ""
+        }`}
+        style={{ WebkitTouchCallout: "none" }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs uppercase tracking-wide text-muted">
+              {sourceLabel(item.source_type)}
+              {item.author ? ` · ${item.author}` : ""}
+            </div>
+            <div className="font-medium truncate">{item.title}</div>
+            {(item.tags || []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {item.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-muted whitespace-nowrap">{item.date_added}</div>
+        </div>
+      </div>
+    </li>
+  );
 }
