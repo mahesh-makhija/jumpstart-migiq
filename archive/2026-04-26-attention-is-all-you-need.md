@@ -1,8 +1,8 @@
 ---
 id: 2026-04-26-attention-is-all-you-need
-url: 'https://share.google/hHknw8Q906OAjdvkd'
+url: 'https://arxiv.org/abs/1706.03762'
 title: Attention Is All You Need
-source_type: article
+source_type: paper
 date_added: '2026-04-26'
 status: inbox
 tags:
