@@ -111,6 +111,12 @@ function serialize(fm: ItemFrontmatter, body: string): string {
 function parse(path: string, raw: string, sha: string): Item {
   const { data, content } = matter(raw);
   const fm = data as ItemFrontmatter;
+  // Older items have arxiv's "[Submitted on ... (v1), last revised ...]"
+  // text saved as the author. Filter it on read so the UI stays clean
+  // without needing to rewrite every file.
+  if (fm.author && /^\[?submitted on/i.test(fm.author.trim())) {
+    fm.author = undefined;
+  }
   return { ...fm, body: content, sha, path };
 }
 

@@ -153,6 +153,15 @@ function extractOG(dom: JSDOM): Record<string, string> {
   return meta;
 }
 
+function cleanByline(byline: string | null | undefined): string | undefined {
+  if (!byline) return undefined;
+  const trimmed = byline.trim();
+  // arxiv abstract pages put "[Submitted on ... (v1), last revised ...]"
+  // in the byline. That's a date range, not an author.
+  if (/^\[?submitted on/i.test(trimmed)) return undefined;
+  return trimmed;
+}
+
 function arxivAbsUrl(url: string): string | null {
   // Convert arxiv.org/pdf/<id>(.pdf)? → arxiv.org/abs/<id> so Readability
   // can pull title + abstract from the HTML page instead of choking on the PDF.
@@ -192,7 +201,7 @@ async function extractArticle(url: string, source_type: SourceType): Promise<Ext
     const parsed = reader.parse();
     if (parsed && parsed.textContent && parsed.textContent.trim().length > 200) {
       title = parsed.title || title;
-      author = parsed.byline || author;
+      author = cleanByline(parsed.byline) || author;
       body = parsed.textContent.trim();
       local = true;
     }
