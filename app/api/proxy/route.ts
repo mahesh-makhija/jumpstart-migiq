@@ -10,10 +10,17 @@ const UA =
 function arxivPdfTarget(url: string): string | null {
   // arxiv.org/abs/<id> → arxiv.org/pdf/<id>.pdf so the offline cache holds
   // a self-contained PDF instead of the abstract HTML (which references
-  // uncached CSS/images).
-  const m = url.match(/^(https?:\/\/arxiv\.org)\/abs\/([^\s?#]+?)(?:v\d+)?(?:[?#].*)?$/i);
-  if (m) return `${m[1]}/pdf/${m[2]}.pdf`;
-  return null;
+  // uncached CSS/images). Be permissive about www. prefix, trailing
+  // slashes, and version suffixes.
+  const m = url.match(
+    /^https?:\/\/(?:www\.)?arxiv\.org\/abs\/([^\s?#]+?)(?:v\d+)?\/?(?:[?#].*)?$/i,
+  );
+  if (!m) return null;
+  // Strip any trailing slash that snuck into the captured id (paranoia for
+  // odd URL forms).
+  const id = m[1].replace(/\/$/, "");
+  if (!id) return null;
+  return `https://arxiv.org/pdf/${id}.pdf`;
 }
 
 function passthrough(upstream: Response): Response {
