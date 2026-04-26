@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,6 +43,7 @@ async function fetchUrl(url: string): Promise<Response> {
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url");
+  const dry = req.nextUrl.searchParams.get("dry") === "1";
   if (!url || !/^https?:\/\//i.test(url)) {
     return new Response("invalid url", { status: 400 });
   }
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest) {
   // If the input is already an arxiv abs URL, jump straight to the PDF.
   const directPdf = arxivPdfTarget(url);
   if (directPdf) {
+    if (dry) return NextResponse.json({ resolved: directPdf, kind: "pdf" });
     const upstream = await fetchUrl(directPdf);
     if (!upstream.ok || !upstream.body) {
       return new Response(`upstream ${upstream.status}`, { status: upstream.status });
@@ -67,11 +69,19 @@ export async function GET(req: NextRequest) {
   const rewritten = arxivPdfTarget(upstream.url);
   if (rewritten) {
     upstream.body.cancel().catch(() => {});
+    if (dry) return NextResponse.json({ resolved: rewritten, kind: "pdf" });
     const pdf = await fetchUrl(rewritten);
     if (!pdf.ok || !pdf.body) {
       return new Response(`upstream ${pdf.status}`, { status: pdf.status });
     }
     return passthrough(pdf);
+  }
+  if (dry) {
+    const finalUrl = upstream.url;
+    const contentType = upstream.headers.get("content-type") || "";
+    upstream.body.cancel().catch(() => {});
+    const kind = /pdf/i.test(contentType) ? "pdf" : "html";
+    return NextResponse.json({ resolved: finalUrl, kind });
   }
   return passthrough(upstream);
 }
