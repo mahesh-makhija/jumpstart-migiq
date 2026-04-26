@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Item, Status } from "@/lib/types";
 
-const LONG_PRESS_MS = 450;
-const LONG_PRESS_MOVE_TOLERANCE = 10;
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOLERANCE = 15;
 
 const STATUSES: { key: Status | "all"; label: string }[] = [
   { key: "inbox", label: "Inbox" },
@@ -23,9 +23,12 @@ export default function Home() {
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ id: string; title: string } | null>(null);
 
-  async function archive(id: string, title: string) {
-    if (!confirm(`Archive "${title}"?`)) return;
+  async function confirmArchive() {
+    if (!pending) return;
+    const { id } = pending;
+    setPending(null);
     setArchivingId(id);
     try {
       const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
@@ -151,10 +154,39 @@ export default function Home() {
               item={it}
               archiving={archivingId === it.id}
               onOpen={() => router.push(`/item/${it.id}`)}
-              onLongPress={() => archive(it.id, it.title)}
+              onLongPress={() => setPending({ id: it.id, title: it.title })}
             />
           ))}
         </ul>
+      )}
+
+      {pending && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setPending(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-white rounded-2xl p-4 shadow-xl space-y-3"
+          >
+            <div className="text-base font-medium">Archive this item?</div>
+            <div className="text-sm text-muted line-clamp-2">{pending.title}</div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setPending(null)}
+                className="flex-1 rounded-lg border border-black/10 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmArchive}
+                className="flex-1 rounded-lg bg-red-600 text-white py-2 text-sm"
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -180,21 +212,25 @@ function ItemRow({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const longPressed = useRef(false);
+  const [pressing, setPressing] = useState(false);
 
   function clearTimer() {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
     }
+    setPressing(false);
   }
 
   function onPointerDown(e: PointerEvent) {
     if (e.button !== undefined && e.button !== 0) return;
     longPressed.current = false;
     startPos.current = { x: e.clientX, y: e.clientY };
+    setPressing(true);
     timer.current = setTimeout(() => {
       longPressed.current = true;
       timer.current = null;
+      setPressing(false);
       onLongPress();
     }, LONG_PRESS_MS);
   }
@@ -242,9 +278,9 @@ function ItemRow({
             onOpen();
           }
         }}
-        className={`block px-3 py-3 hover:bg-black/[0.02] cursor-pointer select-none touch-pan-y ${
+        className={`block px-3 py-3 cursor-pointer select-none touch-pan-y transition-colors ${
           archiving ? "opacity-50" : ""
-        }`}
+        } ${pressing ? "bg-red-50" : "hover:bg-black/[0.02]"}`}
         style={{ WebkitTouchCallout: "none" }}
       >
         <div className="flex items-start justify-between gap-3">

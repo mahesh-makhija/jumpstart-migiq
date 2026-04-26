@@ -46,6 +46,34 @@ function absolutize(href: string, base: string): string {
   }
 }
 
+const GOOGLE_INFRA_HOSTS = [
+  "google.com",
+  "gstatic.com",
+  "googleapis.com",
+  "googletagmanager.com",
+  "googleusercontent.com",
+  "ggpht.com",
+  "googlesyndication.com",
+  "googleadservices.com",
+  "doubleclick.net",
+  "youtube.com",
+  "ytimg.com",
+  "schema.org",
+  "w3.org",
+];
+
+function isInfraHost(host: string): boolean {
+  return GOOGLE_INFRA_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+function isUsefulDestination(u: string, baseHost: string): boolean {
+  const h = hostnameOf(u);
+  if (!h || h === baseHost) return false;
+  if (isShortlink(u)) return false;
+  if (isInfraHost(h)) return false;
+  return true;
+}
+
 function findDestinationInHtml(html: string, baseUrl: string): string | null {
   const meta = html.match(
     /<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["'][^"']*url=([^"'>\s]+)/i,
@@ -68,13 +96,20 @@ function findDestinationInHtml(html: string, baseUrl: string): string | null {
   }
 
   const baseHost = hostnameOf(baseUrl);
-  const hrefMatches = html.matchAll(/href=["'](https?:\/\/[^"'\s]+)["']/gi);
-  for (const m of hrefMatches) {
-    const u = m[1];
-    const h = hostnameOf(u);
-    if (!h || h === baseHost || isShortlink(u)) continue;
-    if (h.endsWith(".google.com") || h === "google.com" || h === "support.google.com") continue;
-    return u;
+
+  // share.google embeds the destination as an escaped string inside JSON in
+  // a script tag. Scan every absolute URL in the document (including scripts,
+  // both raw and JSON-escaped \/) and pick the first one that points
+  // somewhere useful.
+  const all = html.matchAll(/https?:(?:\\\/|\/){2}(?:[^\s"'<>\\]|\\\/)+/g);
+  const seen = new Set<string>();
+  for (const m of all) {
+    let u = m[0].replace(/\\\//g, "/");
+    // Trim trailing punctuation that often gets glued onto matches.
+    u = u.replace(/[)\],.;]+$/, "");
+    if (seen.has(u)) continue;
+    seen.add(u);
+    if (isUsefulDestination(u, baseHost)) return u;
   }
 
   return null;
