@@ -100,7 +100,10 @@ async function unwrapShortlink(url: string): Promise<string | null> {
   }
 }
 
-async function fetchText(url: string, timeoutMs = 12000): Promise<string | null> {
+async function fetchText(
+  url: string,
+  timeoutMs = 12000,
+): Promise<{ text: string; finalUrl: string } | null> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -110,7 +113,7 @@ async function fetchText(url: string, timeoutMs = 12000): Promise<string | null>
       redirect: "follow",
     });
     if (!r.ok) return null;
-    return await r.text();
+    return { text: await r.text(), finalUrl: r.url };
   } catch {
     return null;
   } finally {
@@ -160,19 +163,20 @@ function arxivAbsUrl(url: string): string | null {
 
 async function extractArticle(url: string, source_type: SourceType): Promise<ExtractResult> {
   const fetchUrl = arxivAbsUrl(url) || url;
-  const html = await fetchText(fetchUrl);
-  if (!html) return linkOnly(url, source_type, "Could not fetch page");
+  const fetched = await fetchText(fetchUrl);
+  if (!fetched) return linkOnly(url, source_type, "Could not fetch page");
+  const { text: html, finalUrl } = fetched;
 
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("error", () => {});
   virtualConsole.on("warn", () => {});
   virtualConsole.on("jsdomError", () => {});
 
-  const dom = new JSDOM(html, { url: fetchUrl, virtualConsole });
+  const dom = new JSDOM(html, { url: finalUrl, virtualConsole });
   const meta = extractOG(dom);
 
   let title =
-    meta["og:title"] || meta["twitter:title"] || meta["title"] || hostnameOf(fetchUrl) || url;
+    meta["og:title"] || meta["twitter:title"] || meta["title"] || hostnameOf(finalUrl) || url;
   let author = meta["author"] || meta["article:author"] || undefined;
   const datePublished =
     meta["article:published_time"] ||
@@ -208,6 +212,7 @@ async function extractArticle(url: string, source_type: SourceType): Promise<Ext
     source_type,
     body,
     local_content: local,
+    resolved_url: finalUrl !== url ? finalUrl : undefined,
   };
 }
 
@@ -277,6 +282,9 @@ export async function extract(url: string): Promise<ExtractResult> {
   if (source_type === "youtube") result = await extractYouTube(resolved);
   else if (source_type === "tweet") result = await extractTweet(resolved);
   else result = await extractArticle(resolved, source_type);
-  if (resolved !== url) result.resolved_url = resolved;
+  // Prefer the deepest resolved URL: article fetch may catch a redirect that
+  // the shortlink unwrap missed (share.google → arxiv via HTTP 3xx).
+  const finalResolved = result.resolved_url || (resolved !== url ? resolved : undefined);
+  result.resolved_url = finalResolved;
   return result;
 }
