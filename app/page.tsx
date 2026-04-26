@@ -22,22 +22,43 @@ export default function Home() {
   const [tag, setTag] = useState<string>("");
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [pending, setPending] = useState<{ id: string; title: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
-  async function confirmArchive() {
-    if (!pending) return;
-    const { id } = pending;
-    setPending(null);
-    setArchivingId(id);
+  const selectionMode = selected.size > 0;
+
+  function toggleSelect(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  async function archiveSelected() {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setArchiveBusy(true);
     try {
-      const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setItems((cur) => (cur ? cur.filter((it) => it.id !== id) : cur));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const results = await Promise.allSettled(
+        ids.map((id) => fetch(`/api/items/${id}`, { method: "DELETE" })),
+      );
+      const archived = new Set<string>();
+      const failures: string[] = [];
+      results.forEach((res, i) => {
+        if (res.status === "fulfilled" && res.value.ok) archived.add(ids[i]);
+        else failures.push(ids[i]);
+      });
+      setItems((cur) => (cur ? cur.filter((it) => !archived.has(it.id)) : cur));
+      setSelected(new Set(failures));
+      if (failures.length > 0) setErr(`Failed to archive ${failures.length} item(s)`);
     } finally {
-      setArchivingId(null);
+      setArchiveBusy(false);
     }
   }
 
@@ -89,7 +110,7 @@ export default function Home() {
   }, [items]);
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${selectionMode ? "pb-20" : ""}`}>
       <div className="flex gap-1 overflow-x-auto -mx-4 px-4 pb-1">
         {STATUSES.map((s) => (
           <button
@@ -152,40 +173,37 @@ export default function Home() {
             <ItemRow
               key={it.id}
               item={it}
-              archiving={archivingId === it.id}
-              onOpen={() => router.push(`/item/${it.id}`)}
-              onLongPress={() => setPending({ id: it.id, title: it.title })}
+              selectionMode={selectionMode}
+              selected={selected.has(it.id)}
+              onOpen={() =>
+                selectionMode ? toggleSelect(it.id) : router.push(`/item/${it.id}`)
+              }
+              onLongPress={() => toggleSelect(it.id)}
             />
           ))}
         </ul>
       )}
 
-      {pending && (
-        <div
-          className="fixed inset-0 z-20 bg-black/40 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setPending(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm bg-white rounded-2xl p-4 shadow-xl space-y-3"
-          >
-            <div className="text-base font-medium">Archive this item?</div>
-            <div className="text-sm text-muted line-clamp-2">{pending.title}</div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setPending(null)}
-                className="flex-1 rounded-lg border border-black/10 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmArchive}
-                className="flex-1 rounded-lg bg-red-600 text-white py-2 text-sm"
-              >
-                Archive
-              </button>
-            </div>
+      {selectionMode && (
+        <div className="fixed inset-x-0 bottom-0 z-20 bg-white border-t border-black/10 p-3 flex items-center gap-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+          <div className="flex-1 text-sm">
+            <span className="font-medium">{selected.size}</span>
+            <span className="text-muted"> selected</span>
           </div>
+          <button
+            onClick={clearSelection}
+            disabled={archiveBusy}
+            className="rounded-lg border border-black/10 px-3 py-2 text-sm disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={archiveSelected}
+            disabled={archiveBusy}
+            className="rounded-lg bg-red-600 text-white px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {archiveBusy ? "Archiving…" : "Archive"}
+          </button>
         </div>
       )}
     </div>
@@ -200,12 +218,14 @@ function sourceLabel(s: string): string {
 
 function ItemRow({
   item,
-  archiving,
+  selectionMode,
+  selected,
   onOpen,
   onLongPress,
 }: {
   item: Item;
-  archiving: boolean;
+  selectionMode: boolean;
+  selected: boolean;
   onOpen: () => void;
   onLongPress: () => void;
 }) {
@@ -226,6 +246,9 @@ function ItemRow({
     if (e.button !== undefined && e.button !== 0) return;
     longPressed.current = false;
     startPos.current = { x: e.clientX, y: e.clientY };
+    // While already in selection mode, taps toggle selection — no need to
+    // wait out the long-press timer.
+    if (selectionMode) return;
     setPressing(true);
     timer.current = setTimeout(() => {
       longPressed.current = true;
@@ -262,6 +285,12 @@ function ItemRow({
     e.preventDefault();
   }
 
+  const bg = selected
+    ? "bg-red-50"
+    : pressing
+    ? "bg-black/[0.04]"
+    : "hover:bg-black/[0.02]";
+
   return (
     <li>
       <div
@@ -278,33 +307,39 @@ function ItemRow({
             onOpen();
           }
         }}
-        className={`block px-3 py-3 cursor-pointer select-none touch-pan-y transition-colors ${
-          archiving ? "opacity-50" : ""
-        } ${pressing ? "bg-red-50" : "hover:bg-black/[0.02]"}`}
+        className={`flex items-start gap-3 px-3 py-3 cursor-pointer select-none touch-pan-y transition-colors ${bg}`}
         style={{ WebkitTouchCallout: "none" }}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs uppercase tracking-wide text-muted">
-              {sourceLabel(item.source_type)}
-              {item.author ? ` · ${item.author}` : ""}
-            </div>
-            <div className="font-medium truncate">{item.title}</div>
-            {(item.tags || []).length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {item.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
+        {selectionMode && (
+          <div
+            aria-hidden
+            className={`mt-1 h-5 w-5 rounded border flex items-center justify-center text-xs ${
+              selected ? "bg-red-600 border-red-600 text-white" : "border-black/30 bg-white"
+            }`}
+          >
+            {selected ? "✓" : ""}
           </div>
-          <div className="text-xs text-muted whitespace-nowrap">{item.date_added}</div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs uppercase tracking-wide text-muted">
+            {sourceLabel(item.source_type)}
+            {item.author ? ` · ${item.author}` : ""}
+          </div>
+          <div className="font-medium truncate">{item.title}</div>
+          {(item.tags || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {item.tags.map((t) => (
+                <span
+                  key={t}
+                  className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
+        <div className="text-xs text-muted whitespace-nowrap">{item.date_added}</div>
       </div>
     </li>
   );
