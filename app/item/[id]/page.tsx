@@ -23,13 +23,36 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     (async () => {
-      const r = await fetch(`/api/items/${id}`);
-      if (!r.ok) {
-        setErr(`HTTP ${r.status}`);
-        return;
+      try {
+        const r = await fetch(`/api/items/${id}`);
+        if (r.ok) {
+          const d = (await r.json()) as { item: Item };
+          setItem(d.item);
+          return;
+        }
+        if (r.status !== 404) {
+          setErr(`HTTP ${r.status}`);
+          return;
+        }
+      } catch {
+        /* fall through to list-cache fallback */
       }
-      const d = (await r.json()) as { item: Item };
-      setItem(d.item);
+      // Either offline with no cached detail, or a transient 404 from
+      // GitHub right after creation. Fall back to the list response
+      // (which the SW caches and which already contains the frontmatter).
+      try {
+        const lr = await fetch("/api/items");
+        if (!lr.ok) {
+          setErr(`HTTP ${lr.status}`);
+          return;
+        }
+        const ld = (await lr.json()) as { items: Item[] };
+        const found = ld.items.find((i) => i.id === id);
+        if (found) setItem(found);
+        else setErr("Item not found");
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
     })();
   }, [id]);
 
