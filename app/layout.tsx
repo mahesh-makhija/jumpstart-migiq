@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import SWRegister from "./sw-register";
+import CanonicalRedirect from "./canonical-redirect";
 
 export const metadata: Metadata = {
   title: "Migiq",
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </nav>
         </header>
         <main className="max-w-3xl mx-auto px-4 py-4">{children}</main>
+        <CanonicalRedirect />
         <SWRegister />
       </body>
     </html>
