@@ -1,5 +1,5 @@
 /* Migiq service worker — offline cache for app shell + proxied content. */
-const APP_CACHE = "migiq-app-v1";
+const APP_CACHE = "migiq-app-v2";
 const OFFLINE_CACHE = "migiq-offline-v1";
 
 self.addEventListener("install", (event) => {
