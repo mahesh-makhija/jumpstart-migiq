@@ -7,9 +7,14 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function GET() {
-  const items = await listItems();
-  items.sort((a, b) => (a.date_added < b.date_added ? 1 : -1));
-  return NextResponse.json({ items });
+  try {
+    const items = await listItems();
+    items.sort((a, b) => (a.date_added < b.date_added ? 1 : -1));
+    return NextResponse.json({ items });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 interface CreateBody {

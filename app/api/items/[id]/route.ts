@@ -3,12 +3,22 @@ import { archiveItem, getItem, updateItem } from "@/lib/github";
 import type { Status } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
+
+function jsonError(e: unknown, status = 500): NextResponse {
+  const msg = e instanceof Error ? e.message : String(e);
+  return NextResponse.json({ error: msg }, { status });
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
-  const item = await getItem(id);
-  if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json({ item });
+  try {
+    const { id } = await ctx.params;
+    const item = await getItem(id);
+    if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
+    return NextResponse.json({ item });
+  } catch (e) {
+    return jsonError(e);
+  }
 }
 
 interface PatchBody {
@@ -18,9 +28,9 @@ interface PatchBody {
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
-  const data = (await req.json()) as PatchBody;
   try {
+    const { id } = await ctx.params;
+    const data = (await req.json()) as PatchBody;
     const item = await updateItem(id, {
       status: data.status,
       tags: data.tags,
@@ -28,18 +38,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
     return NextResponse.json({ item });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return jsonError(e);
   }
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
   try {
+    const { id } = await ctx.params;
     await archiveItem(id);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return jsonError(e);
   }
 }

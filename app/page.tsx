@@ -50,8 +50,15 @@ export default function Home() {
         ids.map(async (id) => {
           const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
           if (!r.ok) {
-            const body = (await r.json().catch(() => ({}))) as { error?: string };
-            throw new Error(body.error ? `${r.status} ${body.error}` : `HTTP ${r.status}`);
+            const text = await r.text().catch(() => "");
+            let detail = "";
+            try {
+              const parsed = JSON.parse(text) as { error?: string };
+              if (parsed.error) detail = parsed.error;
+            } catch {
+              if (text) detail = text.slice(0, 200);
+            }
+            throw new Error(detail ? `${r.status} ${detail}` : `HTTP ${r.status}`);
           }
           return id;
         }),
