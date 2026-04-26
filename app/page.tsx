@@ -44,19 +44,33 @@ export default function Home() {
     if (selected.size === 0) return;
     const ids = Array.from(selected);
     setArchiveBusy(true);
+    setErr(null);
     try {
       const results = await Promise.allSettled(
-        ids.map((id) => fetch(`/api/items/${id}`, { method: "DELETE" })),
+        ids.map(async (id) => {
+          const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
+          if (!r.ok) {
+            const body = (await r.json().catch(() => ({}))) as { error?: string };
+            throw new Error(body.error ? `${r.status} ${body.error}` : `HTTP ${r.status}`);
+          }
+          return id;
+        }),
       );
       const archived = new Set<string>();
-      const failures: string[] = [];
+      const failures: { id: string; reason: string }[] = [];
       results.forEach((res, i) => {
-        if (res.status === "fulfilled" && res.value.ok) archived.add(ids[i]);
-        else failures.push(ids[i]);
+        if (res.status === "fulfilled") archived.add(ids[i]);
+        else failures.push({ id: ids[i], reason: String(res.reason?.message ?? res.reason) });
       });
       setItems((cur) => (cur ? cur.filter((it) => !archived.has(it.id)) : cur));
-      setSelected(new Set(failures));
-      if (failures.length > 0) setErr(`Failed to archive ${failures.length} item(s)`);
+      setSelected(new Set(failures.map((f) => f.id)));
+      if (failures.length > 0) {
+        setErr(
+          failures.length === 1
+            ? `Archive failed: ${failures[0].reason}`
+            : `Failed to archive ${failures.length} items. First: ${failures[0].reason}`,
+        );
+      }
     } finally {
       setArchiveBusy(false);
     }

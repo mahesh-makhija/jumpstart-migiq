@@ -217,10 +217,15 @@ export async function archiveItem(id: string): Promise<void> {
     local_content: existing.local_content,
   };
   const content = serialize(fm, existing.body);
+  // If a previous archive attempt half-completed (PUT succeeded, DELETE
+  // failed), the archive file already exists. Detect and pass its sha so
+  // GitHub treats this as an update rather than a 422 create-conflict.
+  const priorArchive = await readFile(archivedPath);
   await putFile({
     path: archivedPath,
     content,
     message: `archive ${id}`,
+    sha: priorArchive?.sha,
   });
   await deleteFile({
     path: existing.path,
