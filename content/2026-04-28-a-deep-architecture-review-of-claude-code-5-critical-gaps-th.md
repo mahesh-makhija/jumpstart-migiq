@@ -8,7 +8,7 @@ title: >-
 source_type: article
 author: Yi Zhou
 date_added: '2026-04-28'
-status: inbox
+status: reading
 tags:
   - ai-accelerated-output
   - consumer-technology
