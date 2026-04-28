@@ -7,7 +7,7 @@ title: >-
 source_type: tweet
 author: Andrew Ng
 date_added: '2026-04-28'
-status: inbox
+status: reading
 tags:
   - ai-accelerated-output
   - consumer-technology
