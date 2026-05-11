@@ -6,10 +6,19 @@ import type { Item, Status } from "@/lib/types";
 
 const STATUSES: Status[] = ["inbox", "reading", "finished"];
 
-type OfflineState = "checking" | "online" | "saving" | "saved" | "failed";
+type OfflineState = "checking" | "online" | "resolving" | "saving" | "saved" | "failed";
+
+interface SavePreview {
+  resolved: string;
+  kind: "pdf" | "html";
+}
 
 function proxyUrl(originalUrl: string): string {
   return `/api/proxy?url=${encodeURIComponent(originalUrl)}`;
+}
+
+function dryRunUrl(originalUrl: string): string {
+  return `/api/proxy?url=${encodeURIComponent(originalUrl)}&dry=1`;
 }
 
 export default function ItemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,16 +29,40 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [offline, setOffline] = useState<OfflineState>("checking");
+  const [preview, setPreview] = useState<SavePreview | null>(null);
 
   useEffect(() => {
     (async () => {
-      const r = await fetch(`/api/items/${id}`);
-      if (!r.ok) {
-        setErr(`HTTP ${r.status}`);
-        return;
+      try {
+        const r = await fetch(`/api/items/${id}`);
+        if (r.ok) {
+          const d = (await r.json()) as { item: Item };
+          setItem(d.item);
+          return;
+        }
+        if (r.status !== 404) {
+          setErr(`HTTP ${r.status}`);
+          return;
+        }
+      } catch {
+        /* fall through to list-cache fallback */
       }
-      const d = (await r.json()) as { item: Item };
-      setItem(d.item);
+      // Either offline with no cached detail, or a transient 404 from
+      // GitHub right after creation. Fall back to the list response
+      // (which the SW caches and which already contains the frontmatter).
+      try {
+        const lr = await fetch("/api/items");
+        if (!lr.ok) {
+          setErr(`HTTP ${lr.status}`);
+          return;
+        }
+        const ld = (await lr.json()) as { items: Item[] };
+        const found = ld.items.find((i) => i.id === id);
+        if (found) setItem(found);
+        else setErr("Item not found");
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
     })();
   }, [id]);
 
@@ -98,8 +131,26 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
     patch({ tags: item.tags.filter((x) => x !== t) });
   }
 
-  async function saveOffline() {
+  async function previewSave() {
     if (!item) return;
+    setOffline("resolving");
+    try {
+      const r = await fetch(dryRunUrl(item.url), { credentials: "include" });
+      if (!r.ok) {
+        setOffline("failed");
+        return;
+      }
+      const data = (await r.json()) as SavePreview;
+      setPreview(data);
+      setOffline("online");
+    } catch {
+      setOffline("failed");
+    }
+  }
+
+  async function confirmSave() {
+    if (!item || !preview) return;
+    setPreview(null);
     setOffline("saving");
     const target = proxyUrl(item.url);
     try {
@@ -162,10 +213,18 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
         {offline === "checking" && <p className="text-sm text-muted">Checking…</p>}
         {offline === "online" && (
           <button
-            onClick={saveOffline}
+            onClick={previewSave}
             className="w-full rounded-lg py-2 text-sm border border-black/10 bg-white"
           >
             Save for offline reading
+          </button>
+        )}
+        {offline === "resolving" && (
+          <button
+            disabled
+            className="w-full rounded-lg py-2 text-sm border border-black/10 bg-white opacity-60"
+          >
+            Resolving…
           </button>
         )}
         {offline === "saving" && (
@@ -192,7 +251,7 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
         {offline === "failed" && (
           <div className="space-y-1">
             <button
-              onClick={saveOffline}
+              onClick={previewSave}
               className="w-full rounded-lg py-2 text-sm border border-amber-300 bg-amber-50 text-amber-900"
             >
               Retry save
@@ -204,6 +263,46 @@ export default function ItemPage({ params }: { params: Promise<{ id: string }> }
           </div>
         )}
       </div>
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-white rounded-2xl p-4 shadow-xl space-y-3"
+          >
+            <div className="text-base font-medium">Save this offline?</div>
+            <div className="text-xs uppercase tracking-wide text-muted">
+              {preview.kind === "pdf" ? "PDF" : "Web page"}
+            </div>
+            <div className="text-sm break-all bg-black/[0.03] border border-black/10 rounded p-2">
+              {preview.resolved}
+            </div>
+            {preview.kind === "html" && (
+              <p className="text-xs text-muted">
+                Page assets (images, CSS) won&apos;t be cached — text will read but the
+                layout may look bare offline.
+              </p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setPreview(null)}
+                className="flex-1 rounded-lg border border-black/10 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSave}
+                className="flex-1 rounded-lg bg-ink text-paper py-2 text-sm"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="text-sm font-medium mb-2">Status</div>

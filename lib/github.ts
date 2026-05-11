@@ -111,6 +111,12 @@ function serialize(fm: ItemFrontmatter, body: string): string {
 function parse(path: string, raw: string, sha: string): Item {
   const { data, content } = matter(raw);
   const fm = data as ItemFrontmatter;
+  // Older items have arxiv's "[Submitted on ... (v1), last revised ...]"
+  // text saved as the author. Filter it on read so the UI stays clean
+  // without needing to rewrite every file.
+  if (fm.author && /^\[?submitted on/i.test(fm.author.trim())) {
+    fm.author = undefined;
+  }
   return { ...fm, body: content, sha, path };
 }
 
@@ -211,10 +217,15 @@ export async function archiveItem(id: string): Promise<void> {
     local_content: existing.local_content,
   };
   const content = serialize(fm, existing.body);
+  // If a previous archive attempt half-completed (PUT succeeded, DELETE
+  // failed), the archive file already exists. Detect and pass its sha so
+  // GitHub treats this as an update rather than a 422 create-conflict.
+  const priorArchive = await readFile(archivedPath);
   await putFile({
     path: archivedPath,
     content,
     message: `archive ${id}`,
+    sha: priorArchive?.sha,
   });
   await deleteFile({
     path: existing.path,

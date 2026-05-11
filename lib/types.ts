@@ -27,6 +27,7 @@ export interface ExtractResult {
   source_type: SourceType;
   body: string;
   local_content: boolean;
+  resolved_url?: string;
 }
 
 export interface TagSuggestion {

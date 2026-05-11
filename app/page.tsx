@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Item, Status } from "@/lib/types";
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOLERANCE = 15;
 
 const STATUSES: { key: Status | "all"; label: string }[] = [
   { key: "inbox", label: "Inbox" },
@@ -12,11 +16,72 @@ const STATUSES: { key: Status | "all"; label: string }[] = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[] | null>(null);
   const [status, setStatus] = useState<Status | "all">("inbox");
   const [tag, setTag] = useState<string>("");
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [archiveBusy, setArchiveBusy] = useState(false);
+
+  const selectionMode = selected.size > 0;
+
+  function toggleSelect(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  async function archiveSelected() {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setArchiveBusy(true);
+    setErr(null);
+    try {
+      const results = await Promise.allSettled(
+        ids.map(async (id) => {
+          const r = await fetch(`/api/items/${id}`, { method: "DELETE" });
+          if (!r.ok) {
+            const text = await r.text().catch(() => "");
+            let detail = "";
+            try {
+              const parsed = JSON.parse(text) as { error?: string };
+              if (parsed.error) detail = parsed.error;
+            } catch {
+              if (text) detail = text.slice(0, 200);
+            }
+            throw new Error(detail ? `${r.status} ${detail}` : `HTTP ${r.status}`);
+          }
+          return id;
+        }),
+      );
+      const archived = new Set<string>();
+      const failures: { id: string; reason: string }[] = [];
+      results.forEach((res, i) => {
+        if (res.status === "fulfilled") archived.add(ids[i]);
+        else failures.push({ id: ids[i], reason: String(res.reason?.message ?? res.reason) });
+      });
+      setItems((cur) => (cur ? cur.filter((it) => !archived.has(it.id)) : cur));
+      setSelected(new Set(failures.map((f) => f.id)));
+      if (failures.length > 0) {
+        setErr(
+          failures.length === 1
+            ? `Archive failed: ${failures[0].reason}`
+            : `Failed to archive ${failures.length} items. First: ${failures[0].reason}`,
+        );
+      }
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -66,7 +131,7 @@ export default function Home() {
   }, [items]);
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${selectionMode ? "pb-20" : ""}`}>
       <div className="flex gap-1 overflow-x-auto -mx-4 px-4 pb-1">
         {STATUSES.map((s) => (
           <button
@@ -126,34 +191,41 @@ export default function Home() {
       ) : (
         <ul className="divide-y divide-black/5 bg-white border border-black/10 rounded-lg overflow-hidden">
           {filtered.map((it) => (
-            <li key={it.id}>
-              <Link href={`/item/${it.id}`} className="block px-3 py-3 hover:bg-black/[0.02]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs uppercase tracking-wide text-muted">
-                      {sourceLabel(it.source_type)}
-                      {it.author ? ` · ${it.author}` : ""}
-                    </div>
-                    <div className="font-medium truncate">{it.title}</div>
-                    {(it.tags || []).length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {it.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted whitespace-nowrap">{it.date_added}</div>
-                </div>
-              </Link>
-            </li>
+            <ItemRow
+              key={it.id}
+              item={it}
+              selectionMode={selectionMode}
+              selected={selected.has(it.id)}
+              onOpen={() =>
+                selectionMode ? toggleSelect(it.id) : router.push(`/item/${it.id}`)
+              }
+              onLongPress={() => toggleSelect(it.id)}
+            />
           ))}
         </ul>
+      )}
+
+      {selectionMode && (
+        <div className="fixed inset-x-0 bottom-0 z-20 bg-white border-t border-black/10 p-3 flex items-center gap-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+          <div className="flex-1 text-sm">
+            <span className="font-medium">{selected.size}</span>
+            <span className="text-muted"> selected</span>
+          </div>
+          <button
+            onClick={clearSelection}
+            disabled={archiveBusy}
+            className="rounded-lg border border-black/10 px-3 py-2 text-sm disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={archiveSelected}
+            disabled={archiveBusy}
+            className="rounded-lg bg-red-600 text-white px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {archiveBusy ? "Archiving…" : "Archive"}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -163,4 +235,133 @@ function sourceLabel(s: string): string {
   return { paper: "paper", article: "article", youtube: "youtube", tweet: "tweet", other: "link" }[
     s
   ] || "link";
+}
+
+function ItemRow({
+  item,
+  selectionMode,
+  selected,
+  onOpen,
+  onLongPress,
+}: {
+  item: Item;
+  selectionMode: boolean;
+  selected: boolean;
+  onOpen: () => void;
+  onLongPress: () => void;
+}) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+  const [pressing, setPressing] = useState(false);
+
+  function clearTimer() {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    setPressing(false);
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (e.button !== undefined && e.button !== 0) return;
+    longPressed.current = false;
+    startPos.current = { x: e.clientX, y: e.clientY };
+    // While already in selection mode, taps toggle selection — no need to
+    // wait out the long-press timer.
+    if (selectionMode) return;
+    setPressing(true);
+    timer.current = setTimeout(() => {
+      longPressed.current = true;
+      timer.current = null;
+      setPressing(false);
+      onLongPress();
+    }, LONG_PRESS_MS);
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (!startPos.current) return;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE) clearTimer();
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    clearTimer();
+    startPos.current = null;
+    if (longPressed.current) {
+      e.preventDefault();
+      return;
+    }
+    onOpen();
+  }
+
+  function onPointerCancel() {
+    clearTimer();
+    startPos.current = null;
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    // Suppress the OS callout that fires alongside touch long-press.
+    e.preventDefault();
+  }
+
+  const bg = selected
+    ? "bg-red-50"
+    : pressing
+    ? "bg-black/[0.04]"
+    : "hover:bg-black/[0.02]";
+
+  return (
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onContextMenu={onContextMenu}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className={`flex items-start gap-3 px-3 py-3 cursor-pointer select-none touch-pan-y transition-colors ${bg}`}
+        style={{ WebkitTouchCallout: "none" }}
+      >
+        {selectionMode && (
+          <div
+            aria-hidden
+            className={`mt-1 h-5 w-5 rounded border flex items-center justify-center text-xs ${
+              selected ? "bg-red-600 border-red-600 text-white" : "border-black/30 bg-white"
+            }`}
+          >
+            {selected ? "✓" : ""}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs uppercase tracking-wide text-muted">
+            {sourceLabel(item.source_type)}
+            {item.author ? ` · ${item.author}` : ""}
+          </div>
+          <div className="font-medium truncate">{item.title}</div>
+          {(item.tags || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {item.tags.map((t) => (
+                <span
+                  key={t}
+                  className="text-xs bg-black/[0.04] rounded px-1.5 py-0.5 text-muted"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="text-xs text-muted whitespace-nowrap">{item.date_added}</div>
+      </div>
+    </li>
+  );
 }
