@@ -6,10 +6,23 @@ import type { ItemFrontmatter, SourceType, Status } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+function sortKey(it: { created_at?: string; date_added: string }): string {
+  const k = it.created_at || it.date_added || "";
+  // Normalize a date-only value (older items) to a full timestamp so it
+  // compares consistently against full ISO created_at timestamps.
+  return /T/.test(k) ? k : `${k}T00:00:00.000Z`;
+}
+
 export async function GET() {
   try {
     const items = await listItems();
-    items.sort((a, b) => (a.date_added < b.date_added ? 1 : -1));
+    items.sort((a, b) => {
+      const ka = sortKey(a);
+      const kb = sortKey(b);
+      if (ka < kb) return 1;
+      if (ka > kb) return -1;
+      return 0;
+    });
     return NextResponse.json({ items });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -43,6 +56,7 @@ export async function POST(req: NextRequest) {
     author: data.author,
     date_published: data.date_published,
     date_added: todayISO(),
+    created_at: new Date().toISOString(),
     status: data.status || "inbox",
     tags: (data.tags || []).map((t) => t.trim()).filter(Boolean),
     local_content: !!data.local_content,

@@ -9,6 +9,7 @@ export interface ItemFrontmatter {
   author?: string;
   date_published?: string;
   date_added: string;
+  created_at?: string;
   status: Status;
   tags: string[];
   local_content: boolean;
