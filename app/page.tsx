@@ -87,7 +87,17 @@ export default function Home() {
     (async () => {
       try {
         const r = await fetch("/api/items");
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) {
+          const text = await r.text().catch(() => "");
+          let detail = "";
+          try {
+            const parsed = JSON.parse(text) as { error?: string };
+            if (parsed.error) detail = parsed.error;
+          } catch {
+            if (text) detail = text.slice(0, 300);
+          }
+          throw new Error(detail ? `${r.status} ${detail}` : `HTTP ${r.status}`);
+        }
         const d = (await r.json()) as { items: Item[] };
         setItems(d.items);
       } catch (e) {
