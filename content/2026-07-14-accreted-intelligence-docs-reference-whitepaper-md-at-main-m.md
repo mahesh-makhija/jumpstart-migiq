@@ -1,0 +1,151 @@
+---
+id: 2026-07-14-accreted-intelligence-docs-reference-whitepaper-md-at-main-m
+url: >-
+  https://github.com/maxbaluev/accreted-intelligence/blob/main/docs%2Freference%2Fwhitepaper.md
+title: >-
+  accreted-intelligence/docs/reference/whitepaper.md at main ·
+  maxbaluev/accreted-intelligence
+source_type: article
+date_added: '2026-07-14'
+status: inbox
+tags:
+  - ai-architecture
+  - memory-management-in-llms
+  - reinforcement-learning
+  - accreted-intelligence
+local_content: true
+---
+A Recursive Language Model over late-interaction scored-token memory, where judgment lives in external scored state and the model is a replaceable processor.
+
+Status (honest). This describes acc, a working single-host research kernel. It is a running system, not a roadmap: a proof-of-concept built to test one thesis under real use. It is deliberately precise about what reality has validated, what is self-graded, and what remains open. Where a claim is not yet validated by controlled experiment, it says so. The running readout (checked-against-reality vs. self-graded counts, updating as the system runs) is live at accint.xyz: measured, not promised.
+
+Abstract
+Large models perform impressive tasks, then forget how they did it. Each session starts near zero. What worked, what failed, and what should be avoided is rarely retained in a form that can govern the next decision. The result is intelligence that is generated and discarded rather than intelligence that compounds.
+This paper presents accreted intelligence: an architecture that moves learning out of model weights and into scored external state. Per-token memory, reusable runtimes, owner facts, warnings, commitments, and outcomes persist across sessions, models, and upgrades. The system improves by predicting the path most likely to work from what worked before, acting, observing real results, assigning credit to the specific units of memory that aligned with the work, and updating their scores, while the model remains a replaceable processor rather than the locus of intelligence. acc is a working kernel for this thesis on a single host. The interface is two verbs over one memory. The discipline that makes it compound is that credit defaults to a weak prior and only reality earns full weight.
+1. The problem — intelligence that doesn't compound
+The central unsolved problem is not generating outputs. It is accumulating reliable judgment across time.
+A model that scores 90% on a benchmark today scores 90% again tomorrow, not 91%. It does not learn from deployment. It does not track which of its outputs led to good results, nor remember that an approach failed last week. It produces intelligence and immediately throws it away.
+This is often mistaken for a memory problem, and treated with retrieval-augmented generation, vector stores, and fine-tuning. But recall is not judgment. Recall returns previously seen information; judgment knows what worked — that an approach succeeded here, failed there, holds in this context but not that one. In reinforcement learning this is the credit assignment problem (Sutton & Barto 2018): when something goes well, which past decision earns the credit; when it goes wrong, which decision caused it. Deployed systems do not solve this. They emit outputs, observe nothing about consequences, and reset.
+Recall is tractable inside current architectures, so the field optimizes recall. But even perfect scored knowledge is inert if consulting it is optional. A model can satisfy its task without ever reading what the system already knows. The deepest bottleneck is retrieval-to-action binding: making accumulated judgment behaviorally mandatory rather than passively available. Recall is the easy part. Scoring is harder. Binding scoring to action is the part everyone skips, and it is the part that decides whether intelligence compounds.
+2. The thesis — accreted intelligence
+Consider DNA. It does not think or plan. It is a scored record of what survived contact with reality, accumulated over deep time. Organisms are temporary processors: they express the genome, meet the environment, and either propagate the successful patterns or are eliminated. The information substrate outlives every individual that passes through it. The intelligence is in the genome, not the organism.
+Most AI systems invert this: the model is treated as the intelligence and state as supporting material. Accreted intelligence flips it back. The state holds the tested judgment, and the model is the transient processor that reads it, extends it, and moves on. The defining properties:
+
+State comes first. The scored state determines what the system knows, what it avoids, and what it tries next — not the model's momentary disposition.
+Reality does the scoring. Memory rises or falls on observed outcomes, not on what a designer guessed would matter, and not on the system's own confidence. Credit defaults to a weak prior unless reality validated it (§4).
+Judgment predicts, not just recalls. The substrate does not only return what is relevant; it ranks the action most likely to improve things next and watches its own prediction error, so a shift in the world is noticed rather than averaged away (§5).
+The processor is replaceable. Intelligence lives in the substrate, so the reasoning model can be swapped without losing what was learned (§6).
+Failure is scored knowledge. Bad outcomes debit the units that aligned and stay retrievable as warnings, rather than being discarded or averaged away. A system that forgets its mistakes becomes overconfident fast.
+
+This matters because reasoning is getting cheaper while judgment is not. If models become interchangeable, the scarce asset is the tested state they work against. The architecture treats reasoning as the renewable input and judgment as the compounding asset.
+3. The shape of the system
+acc reduces the entire reasoner interface to two verbs, and binds every non-trivial call to four links: owner intent, the cited memory that shaped the work, the act, and the outcome that closes it. Citation is the credit edge, not decoration. The memory that gets cited is the memory that earns (or loses) score when the outcome lands.
+
+  
+      flowchart LR
+    INTENT["Owner intent"] --> RETRIEVE["retrieve<br/>(MaxSim over scored tokens)"]
+    RETRIEVE -->|"cite [ids] = credit edge"| ACT["act<br/>(solve · exec · register · name)"]
+    ACT --> OUTCOME["outcome<br/>(real-world verdict)"]
+    OUTCOME -->|"credit moves aligned units"| RETRIEVE
+
+    classDef owner fill:#fbbf24,stroke:#b45309,color:#000,font-weight:bold
+    classDef read fill:#38bdf8,stroke:#0284c7,color:#000,font-weight:bold
+    classDef act fill:#a78bfa,stroke:#7c3aed,color:#000,font-weight:bold
+    classDef score fill:#34d399,stroke:#059669,color:#000,font-weight:bold
+
+    class INTENT owner
+    class RETRIEVE read
+    class ACT act
+    class OUTCOME score
+
+    
+  
+    
+      Loading
+
+  
+
+
+Two verbs. acc_retrieve(query | image) is the only read. It peeks the scored memory by MaxSim and is natively multimodal: a text query and an image both encode to late-interaction tokens, so a text memo can answer an image query, ColPali-style. acc_act(runtime, input) does anything: solve (recurse on a sub-goal), exec (run sandboxed code that can itself recurse over the memory), register (store reusable named code as scored tokens), outcome (close a commitment with a real-world verdict). Any registered runtime is invoked by name. Writing to memory and crediting are not verbs; the loop does them automatically on every call.
+Recursion is the only control primitive. There is no decompose operation. When a goal cannot be answered directly, the reasoner solves a sub-goal, and the tree those recursive solves grow is the decomposition. No planner, no explicit task graph: decomposition emerges. This makes acc a concrete instance of the Recursive Language Model idea (Zhang et al. 2025): treat the language model as a step inside a recursive program over an external store, rather than stuffing a long context into one forward pass.
+Late-interaction scored-token memory. Each entity — a knowledge memo, a runtime, an owner fact, a goal, an image — is stored as an ordered set of per-token vectors. There is no single-vector dense form; the token is the atom. Retrieval ranks by MaxSim (Khattab & Zaharia 2020):
+$$\text{score}(q, d) = \sum_i \max_j \text{sim}(q_i, d_j)$$
+For each query token, take its best-matching document token; sum those bests. The aligned query-token-to-document-token pairs are themselves the citation: relevance is computed by late interaction, not by a lossy pooled embedding. This is published commodity (ColBERT for text; ColPali for vision, Faysse et al. 2024).
+What acc adds on top is a learned-evidence reweighting of that score. Each document token carries a Bayesian Beta(α, β) posterior (Thompson 1933) summarizing how its past alignments fared. Its mean
+$$\pi_j = \frac{\alpha_j}{\alpha_j + \beta_j}$$
+is how often this token's alignments led to good outcomes, and the evidence count $\alpha_j + \beta_j$ is the confidence that estimate carries (it grows as reality weighs in). acc extends plain MaxSim by weighting each token's contribution by this posterior:
+$$\text{score}(q, d) = \sum_i \max_j \big[, \text{sim}(q_i, d_j) \cdot g(\pi_j) ,\big]$$
+where $\pi_j$ is document token $j$'s Beta posterior and $g$ is a monotonic confidence weighting: a token reality has repeatedly confirmed pulls harder than a fresh one. (The exact form of $g$ and its calibration are proprietary.)
+Scored runtimes. register stores code as scored tokens: retrievable by MaxSim, creditable by outcome, improvable by re-registering. There is no privileged lane, since a runtime is just another scored row plus a sandboxed executor. Inside an exec run, code can recurse over the memory programmatically, mapping and filtering the whole substrate in loops without ever loading it into the model's context window. Execution runs in a sandbox with the host network deliberately reachable (so code can call real APIs) and the substrate available read-only for in-sandbox recall.
+Two reasoners over one substrate. The same memory is read and extended by two distinct reasoning models through the identical two-verb interface: one acts as the owner-class coordinator, one as a second reasoning engine. Each proposes; the substrate scores and promotes; neither model canonizes its own output. Self-graded credit from either reasoner is the weak prior until reality validates it.
+Enforcement is structural. The four-link discipline is not a norm the reasoner is asked to honor. It is wired into the runtime by structural enforcement hooks: retrieval fires on the owner's prompt and is bound into the working context (the top operating law: knowledge compounds only when retrieval is behaviorally binding), and an exit guard fails closed when a turn mutated the workspace but recorded no qualifying commitment. The principle: advisory gates are fake; make them hard. The exact hook set and its internals are (intentionally omitted — proprietary).
+4. Reality-gated credit
+A score is only as good as the evidence behind it. The honesty discipline at acc's center is that the system refuses to compound from its own belief.
+When a commitment closes, credit does not smear across a whole document. It flows to the specific tokens that aligned during retrieval, and their Beta posteriors update Bayesian-style: a good outcome adds to a token's α, a bad one to its β, which moves both its mean $\pi_j = \alpha/(\alpha+\beta)$ and its confidence $\alpha+\beta$. The update is surprise-gated: an outcome that confirms what a token already predicted moves it little, while a surprising one moves it more (free-energy minimization, Friston 2010, applied to practical judgment rather than sensory prediction). It is also reality-gated, scaled by provenance: an outcome validated by reality (a real reply, a passing test, a world result) carries full weight, while a self-graded outcome contributes only a deliberately weak prior. In general form, the update for an aligned token scales as
+$$\Delta ;\propto; \text{surprise} \cdot \text{provenance weight}$$
+bounded so a heavily-credited token stays correctable by future opposite evidence rather than pinning at certainty. (The exact surprise function, the provenance weights, the bound, and the calibration constants are proprietary.)
+The discipline that makes the whole loop trustworthy is this provenance gate. Closing a commitment defaults to a self-graded provenance, which credits at a deliberately weak prior, so the substrate stops compounding from self-belief. Full-weight credit requires that reality validated the outcome: the owner confirmed it, the world replied, a sandboxed run exited cleanly, or a test passed. Prediction is not permission, and a prediction is not a result. This is not a rhetorical norm. It is the default in the schema and the weighting in the credit path, so the system cannot quietly tag its own grade as reality. The principle is the public part; the specific provenance multipliers, the self-graded discount, and the calibration layer are the moat (intentionally omitted — proprietary).
+The Beta posterior (Thompson 1933) is load-bearing precisely because it separates how often a unit's alignments led to good outcomes from how much evidence backs that estimate: a unit that aligned well 8 of 10 times should outrank one that aligned well 1 of 1, even though both look strong at a glance. The posterior is enforced and measured at the per-unit level; the exact parameterization of $g$ over it is omitted.
+5. Prediction — the transitions ledger
+Recall returns what was seen; it cannot, on its own, say what to do next. A substrate that only retrieves is reactive — it surfaces relevant memory and stops. accreted intelligence adds a forward model on top of the same scored state, so the system proposes the better path before it acts rather than only crediting it afterward.
+The mechanism is a transitions ledger: every step the loop takes is recorded as a transition in an appraisal space — a typed read of the current situation (what is covered, what is missing, how the last action landed) paired with the action taken and the outcome that followed. To choose the next action, the system does k-nearest-neighbor retrieval in that appraisal space: it finds past situations that look like the present one and ranks the actions that improved things from there. This is energy-descent over predicted outcomes — pick the move whose neighbors most reduced the gap between where the work is and where it needs to be. Retrieval (§3) answers what is relevant; the transitions ledger answers what tends to work from a state like this.
+The forward model is self-monitoring. Each prediction carries an expected outcome, and the realized outcome is compared against it. When the error is small, the world is behaving as the ledger expects and little changes. When the error is large — a cadence that used to land stops landing, a client who always paid goes quiet — the surprise is exactly the signal §4 uses to move scores hardest, and it is also the signal that the predictor's model of this situation has drifted. A world model that does not watch its own error silently rots; this one treats rising error as information.
+This is the same bet as predictive world models in the JEPA line (LeCun 2022): learn to predict the next state in a representation space rather than reconstruct raw observations, and use prediction error as the learning signal. acc applies it to work rather than perception — the "observations" are appraisals of a job in progress, and the "actions" are loop steps (retrieve, solve, register, act, hold for consent). The claim here is bounded and honest: the transitions ledger and the k-NN energy-descent predictor are wired and running, but their lift over a retrieval-only baseline is young — measured as a delta, not yet proven by a controlled counterfactual (§7). (The exact appraisal features, the distance metric, the neighborhood size, and the energy function are proprietary.)
+What this buys, in one line: the system does not merely remember what worked — it predicts the path most likely to work in a situation it has not seen verbatim, and notices when that prediction stops holding.
+6. Processor independence
+A property acc demonstrates concretely: intelligence is not bound to any one reasoning engine. The scored substrate is read and extended by two different model families through one interface today, and neither owns the judgment. It lives in the state. The reasoning processor is swappable, and demonstrably swapped.
+The claim is bounded, on purpose. Processor independence is real at the interface: the two verbs, the schema, and the retrieval bindings are model-agnostic. It is not a claim of total model neutrality. The encoder is part of the substrate's identity: one substrate is pinned to one late-interaction encoder, and changing that pin requires a full re-encode. You cannot mix encoders on one memory. The operating contract also shapes behavior. So the reasoning processor is a free variable; the encoder and the kernel contract are not.
+Processor independence does not imply topology independence either. Multi-agent decomposition can degrade performance on sequential reasoning versus a single capable agent (Kim et al. 2025). acc's recursion is single-reasoner-first: one reasoner tightly bound to the substrate, recursing on sub-goals, delegating to an isolated worker only for implementation. Adding processors adds coordination cost, not judgment.
+7. Boundaries & frontier
+What acc is and isn't, stated plainly:
+
+Not a trained foundation model. acc trains nothing. It is a memory-and-loop kernel around replaceable models. Its intelligence is the scored substrate, not learned weights.
+Not proof of general competence. It is a working single-host kernel with promising mechanism-level behavior, not a demonstration of human- or institution-level intelligence.
+Not proven at scale. MaxSim over per-token multivectors is exact but grows with the substrate. How far it stays fast and accurate, and what the right approximate-search / pruning regime looks like without losing unit-level credit, is open.
+Self-graded credit is weak and must be labeled. It credits at a weak prior and is never to be presented as reality. The provenance discipline is only as honest as the evidence chain behind each close, and a self-improving substrate can corrupt its own scoring in subtle ways, so that chain is something to govern, not assume.
+
+The honest open frontier:
+
+Proving substrate-on vs. off lift. The single most important missing experiment: a counterfactual harness running the same tasks with the scored substrate enabled and disabled, measuring the delta. The mechanisms exist and the hypothesis is falsifiable; the controlled measurement does not yet.
+Predictor lift over retrieval-only. The transitions ledger (§5) is wired and running, but whether k-NN energy-descent over appraisals beats a retrieval-only baseline — and by how much, on which task shapes — is measured as a delta, not yet isolated by a controlled experiment.
+Credit assignment under concurrent work. When many isolated workers and two reasoners act in parallel against one substrate, attributing an outcome to the right memory is harder than in a serial loop.
+Dependable runtime replay. Turning a successful trace into a runtime that replays reliably, not just stored, without re-reasoning each time.
+Reality-gated, idempotent execution. Ensuring side-effecting runtimes are safe to retry, and that a re-run does not double-act on the world.
+Hardening the authority boundary. A reachable-network sandbox plus owner-credential authority is a real attack surface; the line between "may draft" and "may send" must stay hard as the system touches live accounts.
+
+A system that compounds judgment must invest as heavily in governance, credit honesty, and boundary enforcement as in scoring and accumulation. The substrate must be governed as carefully as the intelligence is grown.
+8. Conclusion — the bet
+An intelligence that resets every session can be useful, but it cannot compound. It keeps paying to rediscover what it should already know.
+acc is a bet that this is temporary, reduced to its smallest honest form: two verbs over one late-interaction scored-token memory, where credit attaches to the units that aligned, runtimes are scored code with no privileged lane, outcomes are weighted by whether reality validated them, and the reasoning processor is replaceable while the substrate persists. The four links are made structural by hard enforcement. The trust-kernel of credit honesty and an owner-authority floor keeps the system from compounding self-belief or acting beyond consent.
+acc demonstrates a working kernel for accreted intelligence on a single host. It does not solve intelligence, and it is honest about the gap between its mechanisms (live, scored, running) and its largest claims (substrate-on lift, scale, replay), which remain unproven. The open question is no longer whether this kind of architecture is possible. It is who will build it well, measure it honestly, and govern it carefully.
+
+References
+Late interaction & multi-vector retrieval
+
+Khattab, O. & Zaharia, M. (2020). "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT." SIGIR. arXiv:2004.12832
+Santhanam, K. et al. (2022). "ColBERTv2: Effective and Efficient Retrieval via Lightweight Late Interaction." NAACL. arXiv:2112.01488
+Faysse, M. et al. (2024). "ColPali: Efficient Document Retrieval with Vision Language Models." arXiv:2407.01449
+Dhulipala, L. et al. (2024). "MUVERA: Multi-Vector Retrieval via Fixed Dimensional Encodings." arXiv:2405.19504
+
+Recursion, retrieval-augmentation & long context
+
+Zhang, A. L., Kraska, T. & Khattab, O. (2025). "Recursive Language Models." arXiv:2512.24601
+Lewis, P. et al. (2020). "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks." NeurIPS. arXiv:2005.11401
+
+Credit assignment, Bayesian scoring & active inference
+
+Sutton, R.S. & Barto, A.G. (2018). Reinforcement Learning: An Introduction (2nd ed.). book
+Thompson, W.R. (1933). "On the likelihood that one unknown probability exceeds another in view of the evidence of two samples." Biometrika. JSTOR
+Russo, D. et al. (2018). "A Tutorial on Thompson Sampling." Foundations and Trends in Machine Learning, 11(1). arXiv:1707.02038
+Friston, K. (2010). "The free-energy principle: a unified brain theory?" Nature Reviews Neuroscience, 11. Nature
+Parr, T., Pezzulo, G. & Friston, K. (2022). Active Inference: The Free Energy Principle in Mind, Brain, and Behavior. MIT Press. MIT Press
+
+Predictive world models
+
+LeCun, Y. (2022). "A Path Towards Autonomous Machine Intelligence." OpenReview. openreview:BZ5a1r-kVsf
+
+Externalized intelligence & compound systems
+
+Clark, A. & Chalmers, D. (1998). "The Extended Mind." Analysis, 58(1). Oxford Academic
+Zaharia, M. et al. (2024). "The Shift from Models to Compound AI Systems." BAIR Blog
+Kim, Y. et al. (2025). "Towards a Science of Scaling Agent Systems." arXiv:2512.08296
